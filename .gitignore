@@ -2,9 +2,11 @@
 .venv/
 venv/
 
-# Python cache
+# Python cache and test artifacts
 __pycache__/
 *.py[cod]
+.coverage
+.pytest_cache/
 
 # IDE
 .idea/
@@ -14,14 +16,19 @@ __pycache__/
 .env
 .env.*
 
-# Generated predictions
-answers.jsonl
+# Intermediate outputs (answers.jsonl is the required submission artifact)
 train_answers.jsonl
+improved_train_answers.jsonl
+final_train_answers.jsonl
 
-# Input data
+# Input data supplied for the task; keep local unless publication is explicitly allowed
 data/*.jsonl
 data/*.csv
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Input datasets and generated predictions
+data/
+answers.jsonl

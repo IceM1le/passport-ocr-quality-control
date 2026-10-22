@@ -1,38 +1,71 @@
-# Passport OCR post-processing test
+# Passport OCR Quality Control
 
-## Быстрый запуск
+Conservative post-processing for OCR results of Russian internal passports. The program does not train an OCR model; it checks already extracted fields and accepts a document only when all configured gates pass.
 
-Требуется Python 3.10+; сторонние зависимости не нужны.
+## What it does
 
-```bash
-python postprocess.py data/train_predictions.jsonl train_answers.jsonl
-python evaluate.py train_answers.jsonl data/train_labels.jsonl
+- Checks that all 10 required visual fields are present and have high field/character confidence.
+- Validates date and identifier formats.
+- Checks passport validity on **2026-10-01** using the 20/45-year replacement rules and the 90-day grace period.
+- Checks MRZ structure, birth-date check digit, sex, document-number check digit, and agreement between the MRZ name and the OCR surname/first name.
+- Rejects suspicious geometry in long text fields when a tall field box contains only one text line.
+- Checks the subdivision code against the supplied reference list.
+- Emits one JSONL answer per input document. Rejected documents have no `fields` key.
 
-# Финальный файл для сдачи — отдельно, по test:
+The MRZ character mapping is empirical for the supplied OCR outputs and is **not** a general-purpose ICAO transliteration standard. Some conservative ambiguity rules are dataset-specific and must be validated on an untouched validation split before production use.
+
+## Requirements
+
+- Python 3.10+
+- No third-party packages; CPU-only and no network access required at runtime.
+
+Create and activate a virtual environment (PowerShell):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+## Input files
+
+Place the employer-provided files locally in `data/`:
+
+- `data/train_predictions.jsonl`
+- `data/train_labels.jsonl`
+- `data/test_predictions.jsonl`
+
+The reference code list belongs in `reference/subdivisions.csv`. Input data are excluded from Git by `.gitignore`; do not publish them unless the owner explicitly authorizes distribution.
+
+## Run
+
+Create the submission file for the unlabeled test set:
+
+```powershell
 python postprocess.py data/test_predictions.jsonl answers.jsonl
 ```
 
-Скрипт работает локально на CPU и не обращается к сети. `answers.jsonl` содержит одну JSON-строку на каждый входной документ. Для `reject` поле `fields` опущено. Не запускайте `evaluate.py answers.jsonl data/train_labels.jsonl`, если `answers.jsonl` создан из test: идентификаторы документов не совпадают. Для проверки качества создайте `train_answers.jsonl` из `train_predictions.jsonl`, как показано выше.
+Create and evaluate a separate train output:
 
-## Что реализовано
+```powershell
+python postprocess.py data/train_predictions.jsonl train_answers.jsonl
+python evaluate.py train_answers.jsonl data/train_labels.jsonl
+python validate_train.py train_answers.jsonl data/train_labels.jsonl
+```
 
-- сбор текста из строк каждого визуального поля;
-- пороги confidence по полям и по символам;
-- строгая проверка форматов дат, номера паспорта, пола и кода подразделения;
-- проверка согласованности даты рождения и пола с MRZ;
-- проверка срока действия по дате оценки 01.10.2026;
-- консервативное отклонение документов при пропущенных данных или неубедительных проверках.
+`evaluate.py` checks exact field agreement but does not validate passport validity. `validate_train.py` adds a validity check based on the labeled dates.
 
-## Важные ограничения
+Run unit tests:
 
-Это baseline, а не production-ready KYC система. OCR confidence не является гарантированной вероятностью правильности. Проверка срока действия упрощена и должна быть сверена с актуальными официальными правилами. MRZ-проверка в этой версии проверяет структуру, дату рождения и пол, но не все контрольные цифры и не полную транслитерацию имени. Справочник подразделений подключён как дополнительная проверка.
+```powershell
+python -m unittest discover -s tests -v
+```
 
-**Не заявляйте нулевой риск на test.** На train нужно измерить precision/число ошибочных принятий и отдельно валидировать выбранные пороги. Ноль ошибок на 3 000 примерах не доказывает нулевой риск на новых документах.
+## Results from the supplied training set
 
-## Следующие улучшения
+The initial baseline accepted 127 of 3,000 documents and had 6 accepted documents with field errors. The conservative updated version accepted 109 of 3,000 and had no field errors among accepted documents in this training diagnostic. This is not an independent validation result: the ambiguity rules were refined after inspecting training errors, so the zero-error result is optimistic and must not be interpreted as a guarantee on unseen documents.
 
-1. Сделать фиксированное train/validation-разбиение и отчёт по каждому полю.
-2. Реализовать полную проверку контрольных цифр MRZ по ICAO 9303.
-3. Сверять транслитерацию ФИО и номер/дату выдачи с MRZ, где формат это позволяет.
-4. Калибровать confidence отдельно по source и типу поля.
-5. Подтвердить юридические правила действительности паспорта по официальному источнику.
+The updated code accepts 135 of 2,000 test documents. The true number of erroneous accepts on test is unknown because test labels were not supplied. The point estimate based on the observed training result is zero, but the actual risk is non-zero and cannot be established reliably without an untouched validation set.
+
+## Privacy and submission
+
+`answers.jsonl` is the required task artifact and contains recognized identity fields for accepted documents. Keep the repository private unless the dataset owner confirms that these values are synthetic or may be published. Do not commit source images, raw predictions, labels, credentials, or unrelated local files.

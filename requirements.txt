@@ -1,1 +1,1 @@
-# No third-party dependencies required.
+# No third-party dependencies required; Python standard library only.
