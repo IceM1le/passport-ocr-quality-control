@@ -1,0 +1,27 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+.vscode/
+
+# Secrets
+.env
+.env.*
+
+# Generated predictions
+answers.jsonl
+train_answers.jsonl
+
+# Input data
+data/*.jsonl
+data/*.csv
+
+# OS files
+.DS_Store
+Thumbs.db
