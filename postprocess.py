@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Conservative post-processing for Russian passport OCR predictions.
+"""Консервативная постобработка OCR-результатов российских паспортов.
 
-Usage: python postprocess.py data/test_predictions.jsonl answers.jsonl
-CPU-only; uses only the Python standard library.
+Запуск: python postprocess.py data/test_predictions.jsonl answers.jsonl
+Используется только стандартная библиотека Python; достаточно CPU.
 """
 import csv
 import json
@@ -19,7 +19,7 @@ FIELDS = [
 ]
 AS_OF = date(2026, 10, 1)
 
-# Conservative gates. These are decision thresholds, not calibrated probabilities.
+# Консервативные пороги принятия решения, а не откалиброванные вероятности.
 MIN_FIELD_CONF = {
     "Last_name_ru": .999, "First_name_ru": .999, "Middle_name_ru": .999,
     "Sex_ru": .999, "Birth_date": .999, "Birth_place_ru": .9999,
@@ -28,9 +28,9 @@ MIN_FIELD_CONF = {
 }
 MIN_CHAR_CONF = .9999
 
-# Empirical character mapping observed in the supplied OCR/MRZ data. This is not
-# a legal transliteration standard: the MRZ OCR output contains systematic
-# substitutions such as Ш -> 4, Ч -> 3, Я -> 8.
+# Эмпирическое соответствие символов, обнаруженное в предоставленных OCR/MRZ-данных.
+# Это не официальный стандарт транслитерации: в OCR машиночитаемой зоны встречаются
+# систематические замены, например Ш -> 4, Ч -> 3, Я -> 8.
 MRZ_CHAR_MAP = {
     "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E",
     "Ё": "E", "Ж": "J", "З": "Z", "И": "I", "Й": "Q", "К": "K",
@@ -58,9 +58,9 @@ def extract_field(obj):
     for line in lines:
         text = line.get("text")
         raw_confidences = line.get("char_conf")
-        # Confidence must be present for every recognized character. Silently
-        # dropping malformed values could make an incomplete confidence list
-        # look safer than it is.
+        # Уверенность должна быть указана для каждого распознанного символа.
+        # Если молча отбросить некорректные значения, неполный список уверенности
+        # может ошибочно выглядеть надёжнее, чем он есть на самом деле.
         if not isinstance(text, str) or not isinstance(raw_confidences, list):
             confidence_data_valid = False
             break
@@ -98,7 +98,7 @@ def parse_date(s):
 
 
 def anniversary(birth, years):
-    """Return a birthday anniversary, handling 29 February conservatively."""
+    """Возвращает дату годовщины рождения; для 29 февраля используется консервативное правило."""
     year = birth.year + years
     if birth.month == 2 and birth.day == 29:
         return date(year, 2, 28)
@@ -106,13 +106,13 @@ def anniversary(birth, years):
 
 
 def valid_passport(birth_text, issued_text):
-    """Check passport validity on AS_OF using the 20/45 replacement deadlines.
+    """Проверяет действительность паспорта на дату AS_OF с учётом замены в 20/45 лет.
 
-    A passport issued before age 20 expires at the 20th birthday plus the
-    90-day replacement period. One issued from age 20 to before 45 expires at
-    the 45th birthday plus 90 days. A passport issued at age 45 or later is
-    treated as indefinitely valid. This operational rule should be checked
-    against current official requirements before production use.
+    Паспорт, выданный до 20-летия, считается действительным до окончания 90-дневного
+    периода после 20-летия. Паспорт, выданный с 20 лет до 45 лет, — до окончания
+    90-дневного периода после 45-летия. Паспорт, выданный в 45 лет или позднее,
+    считается действительным бессрочно. Перед использованием в рабочей системе
+    это правило необходимо сверить с актуальными официальными требованиями.
     """
     birth, issued = parse_date(birth_text), parse_date(issued_text)
     if not birth or not issued or issued > AS_OF or birth >= issued:
@@ -187,7 +187,7 @@ def to_mrz_name(value):
 
 
 def mrz_consistent(fields, doc):
-    """Check MRZ structure, birth-date check digit, sex, surname and first name."""
+    """Проверяет структуру MRZ, контрольную цифру даты рождения, пол, фамилию и имя."""
     lines = mrz_lines(doc)
     if len(lines) < 2:
         return False
@@ -223,28 +223,28 @@ def mrz_consistent(fields, doc):
     if surname != tokens[0] or first_name != tokens[1]:
         return False
 
-    # Training error analysis found an additional ambiguous MRZ pattern:
-    # the OCR can read Ж as K in a surname ending in -СКИЙ, making the
-    # incorrect visual value МУТЯНСКИЙ appear to agree with MRZ MUT8NSKIQ,
-    # while the label is МУТЯНСЖИЙ. Reject this observed ambiguity rather than
-    # treating the two OCR outputs as independent proof. This is a dataset-
-    # specific heuristic and should be revalidated on a separate validation set.
+    # При анализе ошибок train обнаружен дополнительный неоднозначный шаблон MRZ:
+    # OCR может распознать Ж как K в фамилии, оканчивающейся на -СКИЙ. Тогда ошибочное
+    # визуальное значение МУТЯНСКИЙ выглядит согласованным с MRZ MUT8NSKIQ,
+    # хотя в разметке указано МУТЯНСЖИЙ. Отклоняем этот случай, а не считаем два
+    # OCR-результата независимым подтверждением. Эвристика специфична для набора данных
+    # и требует повторной проверки на отдельной валидационной выборке.
     if fields.get("Last_name_ru", "").upper().endswith("СКИЙ") and tokens[0].endswith("SKIQ"):
         return False
 
-    # In the provided MRZ OCR, H/J confusion can make Х and Ж indistinguishable
-    # in a first name even when both confidence scores are 1.0. Reject this
-    # ambiguous case rather than treating matching noisy outputs as proof.
+    # В предоставленных OCR-результатах MRZ путаница H/J может сделать Х и Ж
+    # неразличимыми в имени, даже если оба показателя уверенности равны 1.0.
+    # Отклоняем такой неоднозначный случай и не считаем совпадение шумных результатов доказательством.
     if "Х" in fields.get("First_name_ru", "").upper():
         return False
     return True
 
 
 def suspicious_long_field_geometry(obj):
-    """Detect a tall field box containing only one short text line.
+    """Находит высокую область поля, в которой распознана только одна короткая строка.
 
-    This can indicate that OCR omitted one of the expected lines. It is a
-    conservative heuristic used only for long free-text fields.
+    Это может означать, что OCR пропустил одну из ожидаемых строк. Консервативная
+    эвристика применяется только к длинным текстовым полям.
     """
     if not isinstance(obj, dict):
         return False

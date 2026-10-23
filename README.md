@@ -1,50 +1,50 @@
-# Passport OCR Quality Control
+# Контроль качества распознавания OCR паспортов
 
-Conservative post-processing for OCR results of Russian internal passports. The program does not train an OCR model; it checks already extracted fields and accepts a document only when all configured gates pass.
+Консервативная постобработка результатов OCR для российских внутренних паспортов. Программа не обучает OCR-модель: она проверяет уже распознанные поля и принимает документ, только если пройдены все заданные проверки.
 
-## What it does
+## Что делает программа
 
-- Checks that all 10 required visual fields are present and have high field/character confidence; missing, incomplete, or non-finite confidence values fail closed.
-- Validates date and identifier formats.
-- Checks passport validity on **2026-10-01** using the 20/45-year replacement rules and the 90-day grace period.
-- Checks MRZ structure, birth-date check digit, sex, document-number check digit, and agreement between the MRZ name and the OCR surname/first name.
-- Rejects suspicious geometry in long text fields when a tall field box contains only one text line.
-- Checks the subdivision code against the supplied reference list.
-- Emits one JSONL answer per input document. Rejected documents have no `fields` key.
+- Проверяет наличие всех 10 обязательных полей, а также высокую уверенность распознавания поля и каждого символа. Отсутствующие, неполные или некорректные значения уверенности приводят к отклонению документа.
+- Проверяет форматы дат и идентификаторов.
+- Проверяет действительность паспорта на **01.10.2026** с учётом правил замены в 20 и 45 лет и 90-дневного периода после наступления соответствующего возраста.
+- Проверяет структуру машиночитаемой зоны (MRZ), контрольную цифру даты рождения, пол, контрольную цифру номера документа, а также соответствие имени и фамилии данным OCR.
+- Отклоняет подозрительную геометрию длинных текстовых полей: например, если высокая область поля содержит только одну строку текста.
+- Сверяет код подразделения с предоставленным справочником.
+- Формирует по одной записи JSONL на каждый входной документ. Для отклонённых документов поле `fields` не добавляется.
 
-The MRZ character mapping is empirical for the supplied OCR outputs and is **not** a general-purpose ICAO transliteration standard. Some conservative ambiguity rules are dataset-specific and must be validated on an untouched validation split before production use.
+Таблица соответствия кириллических символов символам MRZ построена эмпирически по предоставленным OCR-результатам и **не является универсальным стандартом транслитерации ICAO**. Некоторые консервативные эвристики специфичны для этого набора данных; перед использованием в рабочей системе их необходимо проверить на отдельной валидационной выборке.
 
-## Requirements
+## Требования
 
-- Python 3.10+
-- No third-party packages; CPU-only and no network access required at runtime.
+- Python 3.10 или новее.
+- Сторонние библиотеки не требуются. Во время работы нужен только CPU; подключение к сети не используется.
 
-Create and activate a virtual environment (PowerShell):
+Создайте и активируйте виртуальное окружение (PowerShell):
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-## Input files
+## Входные файлы
 
-Place the employer-provided files locally in `data/`:
+Поместите предоставленные для задания файлы в локальную папку `data/`:
 
 - `data/train_predictions.jsonl`
 - `data/train_labels.jsonl`
 - `data/test_predictions.jsonl`
 
-The reference code list belongs in `reference/subdivisions.csv`. Input data are excluded from Git by `.gitignore`; do not publish them unless the owner explicitly authorizes distribution.
+Справочник кодов подразделений должен находиться в `reference/subdivisions.csv`. Входные данные исключены из Git через `.gitignore`; не публикуйте их без явного разрешения владельца.
 
-## Run
+## Запуск
 
-Create the submission file for the unlabeled test set:
+Сформировать файл ответа для тестового набора без разметки:
 
 ```powershell
 python postprocess.py data/test_predictions.jsonl answers.jsonl
 ```
 
-Create and evaluate a separate train output:
+Сформировать ответы для обучающей выборки и проверить их отдельно:
 
 ```powershell
 python postprocess.py data/train_predictions.jsonl train_answers.jsonl
@@ -52,20 +52,20 @@ python evaluate.py train_answers.jsonl data/train_labels.jsonl
 python validate_train.py train_answers.jsonl data/train_labels.jsonl
 ```
 
-`evaluate.py` checks exact field agreement but does not validate passport validity. `validate_train.py` adds a validity check based on the labeled dates.
+`evaluate.py` проверяет точное совпадение полей с разметкой, но не проверяет действительность паспорта. Дополнительная проверка действительности для обучающей выборки выполняется скриптом `validate_train.py`.
 
-Run unit tests:
+Запустить модульные тесты:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-## Results from the supplied training set
+## Результаты на предоставленной обучающей выборке
 
-The initial baseline accepted 127 of 3,000 documents and had 6 accepted documents with field errors. The conservative updated version accepted 109 of 3,000 and had no field errors among accepted documents in this training diagnostic. This is not an independent validation result: the ambiguity rules were refined after inspecting training errors, so the zero-error result is optimistic and must not be interpreted as a guarantee on unseen documents.
+Исходная версия принимала 127 из 3000 документов; у 6 принятых документов были ошибки в полях. Обновлённая консервативная версия принимает 109 из 3000 документов, и в этой диагностической проверке среди принятых документов ошибок полей не обнаружено. Это не независимая оценка качества: эвристики уточнялись после анализа ошибок обучающей выборки, поэтому результат с нулём ошибок оптимистичен и не гарантирует такой же результат на новых документах.
 
-The updated code accepts 135 of 2,000 test documents. The true number of erroneous accepts on test is unknown because test labels were not supplied. A naive point estimate based on the training result is zero, but this is not a guarantee: the rules were refined after inspecting training errors. Even with zero errors among 109 accepted training examples, a simple one-sided 95% binomial upper bound is about 2.7% only under independent, representative sampling and a fixed-in-advance algorithm; those assumptions are not met here. See `REPORT.md` for the caveat.
+Обновлённая версия принимает 135 из 2000 тестовых документов. Истинное число ошибочно принятых документов в тестовом наборе неизвестно, поскольку разметка для него не предоставлена. Наивная точечная оценка по обучающим данным равна нулю, но это не гарантия: правила уточнялись после анализа ошибок на train. Даже при нуле ошибок среди 109 принятых обучающих примеров простая односторонняя верхняя 95%-ная граница для биномиальной доли составляет около 2,7% только при независимой репрезентативной выборке и алгоритме, зафиксированном заранее. Эти предположения здесь не выполняются. Подробности приведены в `REPORT.md`.
 
-## Privacy and submission
+## Конфиденциальность и отправка решения
 
-`answers.jsonl` is the required task artifact and contains recognized identity fields for accepted documents. Keep the repository private unless the dataset owner confirms that these values are synthetic or may be published. Do not commit source images, raw predictions, labels, credentials, or unrelated local files.
+`answers.jsonl` — обязательный результат задания; в принятых документах он содержит распознанные персональные поля. Не делайте репозиторий публичным, пока владелец набора данных не подтвердит, что значения синтетические или их разрешено публиковать. Не добавляйте в репозиторий исходные изображения, необработанные предсказания, разметку, учётные данные и другие локальные файлы, не относящиеся к решению.
