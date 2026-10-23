@@ -32,6 +32,67 @@ class MrzTests(unittest.TestCase):
         self.assertIsNone(postprocess.to_mrz_name(""))
 
 
+class ConfidenceValidationTests(unittest.TestCase):
+    def test_non_finite_field_confidence_fails_closed(self):
+        obj = {
+            "conf": float("nan"),
+            "lines": [{"text": "ИВАНОВ", "char_conf": [1.0] * 6}],
+            "box": [0, 0, 100, 20],
+        }
+        value, conf, chars, _, _ = postprocess.extract_field(obj)
+        self.assertEqual(value, "ИВАНОВ")
+        self.assertEqual(conf, 0.0)
+        self.assertEqual(len(chars), 6)
+
+    def test_incomplete_character_confidence_list_is_rejected(self):
+        obj = {
+            "conf": 1.0,
+            "lines": [{"text": "ИВАНОВ", "char_conf": [1.0] * 5}],
+            "box": [0, 0, 100, 20],
+        }
+        value, conf, chars, _, _ = postprocess.extract_field(obj)
+        self.assertEqual(value, "ИВАНОВ")
+        self.assertEqual(conf, 1.0)
+        self.assertEqual(chars, [])
+
+    def test_non_finite_character_confidence_is_rejected(self):
+        obj = {
+            "conf": 1.0,
+            "lines": [{"text": "ИВАНОВ",
+                       "char_conf": [
+                           1.0,
+                           1.0,
+                           float("nan"),
+                           1.0,
+                           1.0,
+                           1.0]}
+                      ],
+            "box": [0, 0, 100, 20],
+        }
+        _, _, chars, _, _ = postprocess.extract_field(obj)
+        self.assertEqual(chars, [])
+
+    def test_out_of_range_field_confidence_fails_closed(self):
+        obj = {
+            "conf": 1.5,
+            "lines": [{"text": "ИВАНОВ", "char_conf": [1.0] * 6}],
+            "box": [0, 0, 100, 20],
+        }
+
+        _, conf, _, _, _ = postprocess.extract_field(obj)
+        self.assertEqual(conf, 0.0)
+
+    def test_out_of_range_character_confidence_is_rejected(self):
+        obj = {
+            "conf": 1.0,
+            "lines": [{"text": "ИВАНОВ", "char_conf": [1.0] * 5 + [1.5]}],
+            "box": [0, 0, 100, 20],
+        }
+
+        _, _, chars, _, _ = postprocess.extract_field(obj)
+        self.assertEqual(chars, [])
+
+
 class GeometryTests(unittest.TestCase):
     def test_tall_field_with_one_line_is_suspicious(self):
         obj = {"box": [100, 200, 400, 64], "lines": [{"text": "ОТДЕЛ МВД", "box": [102, 202, 390, 29]}]}

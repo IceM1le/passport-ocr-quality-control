@@ -31,4 +31,3 @@ Thumbs.db
 
 # Input datasets and generated predictions
 data/
-answers.jsonl

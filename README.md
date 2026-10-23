@@ -4,7 +4,7 @@ Conservative post-processing for OCR results of Russian internal passports. The 
 
 ## What it does
 
-- Checks that all 10 required visual fields are present and have high field/character confidence.
+- Checks that all 10 required visual fields are present and have high field/character confidence; missing, incomplete, or non-finite confidence values fail closed.
 - Validates date and identifier formats.
 - Checks passport validity on **2026-10-01** using the 20/45-year replacement rules and the 90-day grace period.
 - Checks MRZ structure, birth-date check digit, sex, document-number check digit, and agreement between the MRZ name and the OCR surname/first name.
@@ -64,7 +64,7 @@ python -m unittest discover -s tests -v
 
 The initial baseline accepted 127 of 3,000 documents and had 6 accepted documents with field errors. The conservative updated version accepted 109 of 3,000 and had no field errors among accepted documents in this training diagnostic. This is not an independent validation result: the ambiguity rules were refined after inspecting training errors, so the zero-error result is optimistic and must not be interpreted as a guarantee on unseen documents.
 
-The updated code accepts 135 of 2,000 test documents. The true number of erroneous accepts on test is unknown because test labels were not supplied. The point estimate based on the observed training result is zero, but the actual risk is non-zero and cannot be established reliably without an untouched validation set.
+The updated code accepts 135 of 2,000 test documents. The true number of erroneous accepts on test is unknown because test labels were not supplied. A naive point estimate based on the training result is zero, but this is not a guarantee: the rules were refined after inspecting training errors. Even with zero errors among 109 accepted training examples, a simple one-sided 95% binomial upper bound is about 2.7% only under independent, representative sampling and a fixed-in-advance algorithm; those assumptions are not met here. See `REPORT.md` for the caveat.
 
 ## Privacy and submission
 

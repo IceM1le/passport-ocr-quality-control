@@ -6,6 +6,7 @@ CPU-only; uses only the Python standard library.
 """
 import csv
 import json
+import math
 import re
 import sys
 from datetime import date, datetime, timedelta
@@ -52,12 +53,38 @@ def extract_field(obj):
         str(x.get("text", "")).strip()
         for x in lines if x.get("text") is not None
     ).strip()
-    chars = [
-        float(c) for line in lines for c in (line.get("char_conf") or [])
-        if isinstance(c, (int, float))
-    ]
+    chars = []
+    confidence_data_valid = bool(lines)
+    for line in lines:
+        text = line.get("text")
+        raw_confidences = line.get("char_conf")
+        # Confidence must be present for every recognized character. Silently
+        # dropping malformed values could make an incomplete confidence list
+        # look safer than it is.
+        if not isinstance(text, str) or not isinstance(raw_confidences, list):
+            confidence_data_valid = False
+            break
+        if len(raw_confidences) != len(text):
+            confidence_data_valid = False
+            break
+        try:
+            line_confidences = [float(c) for c in raw_confidences]
+        except (TypeError, ValueError):
+            confidence_data_valid = False
+            break
+        if not all(
+                math.isfinite(c) and 0.0 <= c <= 1.0
+                for c in line_confidences
+        ):
+            confidence_data_valid = False
+            break
+        chars.extend(line_confidences)
+    if not confidence_data_valid:
+        chars = []
     try:
         conf = float(obj.get("conf"))
+        if not math.isfinite(conf) or not 0.0 <= conf <= 1.0:
+            conf = 0.0
     except (TypeError, ValueError):
         conf = 0.0
     return value or None, conf, chars, obj.get("box"), lines
@@ -287,7 +314,7 @@ def process(doc, known_codes=None):
             all_confident = False
         if not mrz_consistent(fields, doc):
             all_confident = False
-        if known_codes and fields.get("Issue_organisation_code") not in known_codes:
+        if known_codes is not None and fields.get("Issue_organisation_code") not in known_codes:
             all_confident = False
 
     return {
@@ -302,7 +329,13 @@ def main():
         raise SystemExit("Usage: python postprocess.py <predictions.jsonl> <answers.jsonl>")
     src, dst = map(Path, sys.argv[1:])
     root = Path(__file__).resolve().parent
-    codes = load_subdivisions(root / "reference" / "subdivisions.csv")
+    codes_path = root / "reference" / "subdivisions.csv"
+    codes = load_subdivisions(codes_path)
+    if not codes:
+        raise SystemExit(
+            f"Subdivision reference is missing or empty: {codes_path}. "
+            "Refusing to bypass the subdivision-code validation."
+        )
     n = accepted = 0
     with src.open(encoding="utf-8") as inp, dst.open("w", encoding="utf-8") as out:
         for line in inp:
